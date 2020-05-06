@@ -44,7 +44,7 @@ typedef struct branch {
 typedef struct helperx {
     branch *head;
     branch *branches ;
-    change *temp_changes ;
+    //change *temp_changes ;
     tracked_files *tracking ;
 }helperx;
 
@@ -68,7 +68,7 @@ void print_commit(void *helper, char *commit_id);
 int svc_branch(void *helper, char *branch_name);
 
 int svc_checkout(void *helper, char *branch_name);
-
+ 
 char **list_branches(void *helper, int *n_branches);
 
 int svc_add(void *helper, char *file_name);
@@ -84,6 +84,7 @@ char* convert_to_hex(int hashcode);
 char *svc_merge(void *helper, char *branch_name, resolution *resolutions, int n_resolutions);
 
 char *strrev(char *str);
+
 
 char *strrev(char *str)
 {
@@ -117,20 +118,65 @@ int hash_file(void *helper, char *file_path) {
         hash = (hash+ret)%2000000000;
         //printf("%d,",ret);
     }
+    fclose(fp);
     return hash;
 }
 void cleanup(void *helper) {
-    free(helper);
+    helperx* h = (helperx*) helper;
+    while(h->tracking!=NULL){
+        free(h->tracking);
+        h->tracking = h->tracking->next;
+    }
+
+    //free(h->branches->latest_commit->files);
+    //free(h->branches->latest_commit->prev->files);
+    //free(h->branches->latest_commit->prev->files->next);
+    //free(h->branches->down->latest_commit->files);
+    //free(h->branches->down->latest_commit->files->next);
+    //free(h->branches->down->latest_commit->files->next);
+    //free(h->branches->latest_commit->changes);
+    //free(h->branches->latest_commit->prev->changes);
+    //free(h->branches->down->latest_commit->changes);
+    //free(h->branches->latest_commit);
+    //free(h->branches->latest_commit->prev);
+    //free(h->branches->down->latest_commit);
+    while(h->branches!=NULL){
+        h->head = h->branches;
+        while(h->branches->latest_commit!=NULL &&strcmp(h->branches->branch_name,h->head->branch_name)==0){
+            while(h->branches->latest_commit->files!=NULL){
+                free(h->branches->latest_commit->files);
+                h->branches->latest_commit->files = h->branches->latest_commit->files->next;
+            }
+            while(h->branches->latest_commit->changes!=NULL){
+                free(h->branches->latest_commit->changes);
+                h->branches->latest_commit->changes = h->branches->latest_commit->changes->next;
+            }
+            //free(h->branches->latest_commit->commit_message);
+            free(h->branches->latest_commit->commit_id);
+            free(h->branches->latest_commit);
+            h->branches->latest_commit = h->branches->latest_commit->prev;
+        }
+        free(h->branches);
+        h->branches = h->branches->down;
+    }
+    free(h->head);
+    //free(h->branches);
+    //free(h->branches->down);
+    //  free(h->branches->down->down);
+    
+    //free(h->head);
+    free(h);
 }
 int svc_add(void *helper, char *file_name) {
     if(file_name == NULL) return -1;
     helperx *helperc = (helperx*)helper;
     tracked_files* iter = helperc->tracking;
-    if(iter==NULL){
+    if(helperc->tracking==NULL){
         //printf("%s in 1",file_name);
         helperc->tracking = (tracked_files*)malloc(sizeof(tracked_files));
         strcpy(helperc->tracking->filename,file_name);
         helperc->tracking->hash = hash_file(helper,file_name);
+        helperc->tracking->next = NULL;
         return hash_file(helper,file_name);
     }
     while(iter->next!=NULL){
@@ -145,6 +191,7 @@ int svc_add(void *helper, char *file_name) {
     strcpy(iter->next->filename,file_name);
     iter->next->hash = hash_file(helper,file_name);
     iter->next->prev = iter;
+    iter->next->next = NULL;
     return hash_file(helper,file_name);
 }
 void *svc_init(void) {
@@ -153,6 +200,7 @@ void *svc_init(void) {
     helper->branches = (branch*)malloc(sizeof(branch));
     strcpy(helper->branches->branch_name,"master");
     helper->head = helper->branches;
+    helper->head->latest_commit = NULL;
     helper->branches->down = NULL;
     helper->branches->up = NULL;
     return helper;
@@ -187,14 +235,14 @@ int svc_rm(void *helper, char *file_name) {
         int x = iter->hash;
         iter = iter->prev;
         iter->next = NULL;
-        return x;
+        return x;     
     }
     return -2;
 }
 char *svc_commit(void *helper, char *message) {
     helperx *helperc = (helperx*)helper;
     if(message==NULL) return NULL;
-    if(helperc->branches->latest_commit==NULL){
+    if(helperc->head->latest_commit==NULL){
         if(helperc->tracking==NULL) return NULL;
         //printf("here1");
         helperc->branches->latest_commit = (commit*)malloc(sizeof(commit));
@@ -207,7 +255,7 @@ char *svc_commit(void *helper, char *message) {
         while(iter!=NULL){
             //printf("here2");
             //printf("\nFile name : %s ",iter->filename);
-
+            
             if(current_tracking==NULL){
                 //printf("here3");
                 current_commit->files = (tracked_files*)malloc(sizeof(tracked_files));
@@ -215,7 +263,7 @@ char *svc_commit(void *helper, char *message) {
                 current_commit->files->hash = iter->hash;
                 current_tracking =  current_commit->files;
                 //printf("here3");
-            }
+            }    
             else{
                 //printf("here4");
                 current_tracking->next = (tracked_files*)malloc(sizeof(tracked_files));
@@ -228,7 +276,7 @@ char *svc_commit(void *helper, char *message) {
             if(hash_file(helper,iter->filename)==-2){
                 //printf("%s",iter->filename);
                 iter = iter->next;
-                continue;
+                continue;    
             }
             if(current_commit->changes == NULL){
                 //printf("here5");
@@ -237,7 +285,7 @@ char *svc_commit(void *helper, char *message) {
                 helperc->branches->latest_commit->changes->curr_hash_value = hash_file(helper,iter->filename);
                 current_changes = helperc->branches->latest_commit->changes;
                 helperc->branches->latest_commit->changes->add_del_mod = 'a';
-
+                
                 //printf("here5");
             }
             else{
@@ -253,10 +301,19 @@ char *svc_commit(void *helper, char *message) {
             //printf("here7");
             iter = iter->next;
         }
-        //printf("File name : %c ",current_changes->add_del_mod);
+       // printf("File name : %c ",current_changes->add_del_mod);
         //printf("%d",helperc->branches->latest_commit->commit_id);
         //printf( " commit id :%d ",get_commit_id(current_changes,message));
-        if(current_commit->changes == NULL){helperc->branches->latest_commit = NULL;  return NULL;}
+        if(current_commit->changes == NULL){
+            while(current_commit->files!=NULL){
+                free(current_commit->files);
+                current_commit->files = current_commit->files->next;
+            }
+            free(current_commit->commit_message);
+            free(current_commit->commit_id);
+            helperc->branches->latest_commit = NULL;
+            return NULL;
+        }
         current_commit->commit_message = message;
         current_commit->commit_id = convert_to_hex(get_commit_id(current_commit->changes,message));
         strcpy(current_commit->branch_name,helperc->head->branch_name);
@@ -270,7 +327,7 @@ char *svc_commit(void *helper, char *message) {
         commit* prev_commit = helperc->head->latest_commit;
         prev_commit->next = (commit*)malloc(sizeof(commit));
         commit* current_commit = prev_commit->next;
-
+        
         tracked_files* prev_tracking = prev_commit->files;
         change* current_changes = current_commit->changes;
         current_changes = NULL;
@@ -303,20 +360,22 @@ char *svc_commit(void *helper, char *message) {
                     }
                     else{
                         if(hash_file(helper,tracking->filename)==-2){
-                            //printf("\n FILE REMOVED \n");
-                            if(current_commit->files==NULL){
-                                current_commit->files = (tracked_files*)malloc(sizeof(tracked_files));
-                                strcpy(current_commit->files->filename , tracking->filename);
-                                current_commit->files->hash = hash_file(helper,tracking->filename);
-                                current_tracking = current_commit->files;
-                            }
-                            else{
-                                current_tracking->next = (tracked_files*)malloc(sizeof(tracked_files));
-                                strcpy(current_tracking->next->filename , tracking->filename);
-                                current_tracking->next->hash = hash_file(helper,tracking->filename);
-                                current_tracking->next->prev = current_tracking;
-                                current_tracking = current_tracking->next;
-                            }
+                            printf("\n FILE REMOVED \n");
+                            //if(current_commit->files==NULL){
+                            //    current_commit->files = (tracked_files*)malloc(sizeof(tracked_files));
+                            //   strcpy(current_commit->files->filename , tracking->filename);
+                            //    current_commit->files->hash = hash_file(helper,tracking->filename);
+                            //    current_tracking = current_commit->files;
+                            //}
+                            //else{
+                            //    current_tracking->next = (tracked_files*)malloc(sizeof(tracked_files));
+                            //    strcpy(current_tracking->next->filename , tracking->filename);
+                            //    current_tracking->next->hash = hash_file(helper,tracking->filename);
+                            //    current_tracking->next->prev = current_tracking;
+                            //    current_tracking = current_tracking->next;
+                            //}
+                            svc_rm(helper,tracking->filename);
+
                             if(current_commit->changes==NULL){
                                 current_commit->changes = (change*)malloc(sizeof(change));
                                 current_commit->changes->add_del_mod = 'd';
@@ -333,7 +392,7 @@ char *svc_commit(void *helper, char *message) {
                                 current_changes = current_changes->next;
                             }
                         }
-                        if(prev_tracking->hash == -2){
+                        else if(prev_tracking->hash == -2){
                             //printf("\n FILE ADDED TRACKING IN PREV \n");
                             if(current_commit->files==NULL){
                                 current_commit->files = (tracked_files*)malloc(sizeof(tracked_files));
@@ -399,7 +458,7 @@ char *svc_commit(void *helper, char *message) {
                         }
                     }
                 }
-
+                
                 prev_tracking = prev_tracking->next;
             }
             if(flag == 'a'){
@@ -436,7 +495,18 @@ char *svc_commit(void *helper, char *message) {
             prev_tracking = prev_commit->files;
             tracking = tracking->next;
         }
-        if(current_commit->changes == NULL){current_commit->prev = NULL; prev_commit->next = NULL; return NULL;}
+        if(current_commit->changes == NULL){
+            current_commit->prev = NULL; 
+            prev_commit->next = NULL; 
+            while(current_commit->files!=NULL){
+                free(current_commit->files);
+                current_commit->files = current_commit->files->next;
+            }
+            free(current_commit->commit_message);
+            free(current_commit);
+            
+            return NULL;
+        }
         current_commit->prev = prev_commit;
         helperc->head->latest_commit = current_commit;
         current_commit->commit_message = message;
@@ -448,27 +518,30 @@ char *svc_commit(void *helper, char *message) {
 }
 int get_commit_id(change *changes,char* message){
     //printf("here8");
-
+            
     int id = 0;
     char * t = message;
     while(*t!='\0'){
         id = (id+*t)%1000;
         //printf("%c",*t);
         t++;
-
+        
     }
     //printf("here9");
-
+            
     change* iter = changes;
     while(iter!=NULL){
         //printf("\nmod value : %c\n",iter->add_del_mod);
         if(iter->add_del_mod == 'a'){
+            //printf("a");
             id = id+376591;
         }
         if(iter->add_del_mod == 'd'){
+            //printf("d");
             id = id+85973;
         }
         if(iter->add_del_mod == 'm'){
+            //printf("m");
             id = id+9573681;
         }
         //printf("\nid in iterator : %d",id);
@@ -485,37 +558,37 @@ int get_commit_id(change *changes,char* message){
 }
 char* convert_to_hex(int n){
     //printf("%d",n);
-    char* hexaDeciNum = malloc(10);
+    char* hexaDeciNum = malloc(10); 
     //printf("alpha");
-    // counter for hexadecimal number array
-    int i = 0;
-    while(n!=0)
-    {
-        // temporary variable to store remainder
-        int temp  = 0;
-
-        // storing remainder in temp variable.
-        temp = n % 16;
-
-        // check if temp < 10
-        if(temp < 10)
-        {
-            hexaDeciNum[i] = temp + 48;
-            i++;
-        }
+    // counter for hexadecimal number array 
+    int i = 0; 
+    while(n!=0) 
+    {    
+        // temporary variable to store remainder 
+        int temp  = 0; 
+          
+        // storing remainder in temp variable. 
+        temp = n % 16; 
+          
+        // check if temp < 10 
+        if(temp < 10) 
+        { 
+            hexaDeciNum[i] = temp + 48; 
+            i++; 
+        } 
         else
-        {
-            hexaDeciNum[i] = temp + 55;
-            i++;
-        }
-
-        n = n/16;
-    }
+        { 
+            hexaDeciNum[i] = temp + 55; 
+            i++; 
+        } 
+          
+        n = n/16; 
+    } 
       //printf("her\n \n");
-    // printing hexadecimal number array in reverse order
-    //for(int j=i-1; j>=0; j--)
+    // printing hexadecimal number array in reverse order 
+    //for(int j=i-1; j>=0; j--) 
     //    printf("%c",hexaDeciNum[j]);
-    hexaDeciNum[i] = '\0';
+    hexaDeciNum[i] = '\0'; 
     return strrev(hexaDeciNum);
 }
 void print_commit(void *helper, char *commit_id){
@@ -533,8 +606,8 @@ void print_commit(void *helper, char *commit_id){
         }
         if(changes->add_del_mod == 'm'){
             printf("/ %s [%d --> %d]\n",changes->filename,changes->prev_hash_value,changes->curr_hash_value);
-        }
-        changes = changes->next;
+        }    
+        changes = changes->next;    
     }
     int count = 0;
     while(tracks!=NULL){count++;tracks = tracks->next;}
@@ -554,7 +627,7 @@ void *get_commit(void *helper, char *commit_id){
         commit* c_iter = (commit*)b_iter->latest_commit;
         while(c_iter!=NULL){
             if(strcmp(commit_id,c_iter->commit_id)==0){
-                printf("BRANCH NAME OF COMMIT : %s : %s\n",c_iter->commit_id,c_iter->branch_name);
+                //printf("BRANCH NAME OF COMMIT : %s : %s\n",c_iter->commit_id,c_iter->branch_name);
                 return c_iter;
             }
             c_iter = c_iter->prev;
@@ -582,8 +655,8 @@ int svc_branch(void *helper, char *branch_name){
         //printf("Invalid NAME\n");
         return -1;
     }
-    //printf("NOT INVALID NAME");
-
+    //printf("NOT INVALID NAME");    
+    
     branch* br_iter = helperc->branches;
     while(br_iter!=NULL){
         //printf("Comparing Branch names %s : %s\n",branch_name,br_iter->branch_name);
@@ -604,9 +677,9 @@ int svc_branch(void *helper, char *branch_name){
             }
             tracking = tracking->next;
         }
-
+        
     }
-    else{
+    else{    
         tracked_files* prev_tracking = prev_commit->files;
         flag = 'a';
         while(tracking!=NULL){
@@ -692,10 +765,10 @@ char **list_branches(void *helper, int *n_branches){
         n++;
         br_iter = br_iter->down;
     }
-
+    
     char** iter = malloc(n * sizeof(char*));
     br_iter = helperc->branches;
-
+    
     //printf("NOT NULL\n");
     int count = 0;
     while(br_iter!=NULL){
@@ -705,10 +778,10 @@ char **list_branches(void *helper, int *n_branches){
         //printf("\nBranch NAME in LIST: %s",iter[count]);
         count++;
         br_iter = br_iter->down;
-
+        
     }
     *n_branches = count;
-
+    //free(iter);
     return iter;
 }
 char **get_prev_commits(void *helper, void *commitx, int *n_prev){
@@ -716,9 +789,10 @@ char **get_prev_commits(void *helper, void *commitx, int *n_prev){
     //printf("\nGET prev commites\n");
     commit* current_commit = (struct commit*)commitx;
     commit* iter = current_commit;
+    if(iter==NULL) return NULL;
     //printf("current commit: %s\n",iter->commit_id);
-    printf("current commit: %s\n",iter->branch_name);
-
+    //printf("current commit: %s\n",iter->branch_name);
+    
     int n = 0;
     iter = iter->prev;
     while(iter!=NULL && (strcmp(current_commit->branch_name,iter->branch_name)==0)){
@@ -728,19 +802,23 @@ char **get_prev_commits(void *helper, void *commitx, int *n_prev){
     if(n == 0) return NULL;
     iter = current_commit ->prev;
     char** ls_iter = malloc(n * sizeof(char*));
-    printf("current commit: %s\n",current_commit->branch_name);
+    //printf("current commit: %s\n",current_commit->branch_name);
     int count = 0;
     while(iter!=NULL && (strcmp(current_commit->branch_name,iter->branch_name)==0)){
         //printf("%s",iter->commit_id);
         ls_iter[count] =    (iter->commit_id);
         //printf("%s",iter->commit_id);
-        printf("current lis: %s\n",ls_iter[count]);
+        //printf("current lis: %s\n",ls_iter[count]);
         count++;
         iter = iter->prev;
     }
     //printf(" : OUT : ");
     *n_prev = n;
-
+    if(n==0){
+        free(ls_iter);
+        return NULL;
+    }
+    
     return ls_iter;
 }
 int svc_reset(void *helper, char *commit_id){
@@ -815,7 +893,7 @@ char *svc_merge(void *helper, char *branch_name, resolution *resolutions, int n_
         tracking = tracking->next;
     }
     if(f == 'c'){
-        printf("Changes must committed\n");
+        printf("Changes must committed\n");    
         return NULL;
     }
     printf("Merge Successful");
@@ -857,7 +935,7 @@ char *svc_merge(void *helper, char *branch_name, resolution *resolutions, int n_
                             }
                         }
                     }
-                }
+                }   
             }
         }
     }

@@ -521,8 +521,7 @@ int svc_branch(void *helper, char *branch_name){
                 break;
             }
             tracking = tracking->next;
-        }
-        
+        }        
     }
     else{    
         tracked_files* prev_tracking = prev_commit->files;
